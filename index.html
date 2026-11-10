@@ -239,6 +239,26 @@
         border-top: 1px solid var(--line);
       }
 
+      /* ---------- Summary block ---------- */
+      .summary-block {
+        margin: 0 4px 16px;
+        padding: 12px 15px;
+        border: 1px solid var(--accent);
+        border-radius: 12px;
+        background: var(--accent-soft);
+      }
+      .summary-label {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--accent-strong);
+        margin-bottom: 4px;
+      }
+      .summary-text {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 14.5px;
+      }
+
       /* ---------- Chat log ---------- */
       .chat {
         flex: 1 1 auto;
@@ -384,6 +404,27 @@
       #sendBtn:hover { background: var(--accent-strong); }
       #sendBtn:disabled { opacity: 0.45; cursor: default; }
       #sendBtn.stop { background: var(--danger); color: #fff; }
+      .composer-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+      .composer-actions .hint {
+        font-size: 12px;
+        color: var(--ink-faint);
+      }
+      .toast {
+        margin-bottom: 10px;
+        padding: 9px 12px;
+        border-radius: 10px;
+        font-size: 13.5px;
+        background: var(--accent-soft);
+        white-space: pre-wrap;
+      }
+      .toast.err { background: var(--danger-bg); color: var(--danger); }
+      .toast[hidden] { display: none; }
       .composer .foot {
         display: flex;
         justify-content: space-between;
@@ -510,18 +551,13 @@
 
         <div class="field">
           <span class="f-label" id="historyLabel">チャット履歴</span>
-          <div class="toggle-row">
-            <input type="checkbox" id="loadAllHistory" checked aria-describedby="historyHint" />
-            <label for="loadAllHistory">毎回、過去の全てのチャットを読み込ませる</label>
-          </div>
           <p class="hint" id="historyHint">
-            オンにすると、過去のセッションや「新しいチャット」を押す前の会話も含め、保存済みの全履歴を毎回のリクエストに含めて送信します。
-            オフの場合は、今のチャット（最後に「新しいチャット」を押して以降、またはページを開いて以降）の会話だけを送ります。
-            会話はどちらの場合もこのブラウザの localStorage に保存され、ページを開くたびに表示が復元されます。
+            送信されるのは、今のチャット（最後に「新しいチャット」を押して以降）の会話だけです。「新しいチャット」を押す前の会話は、画面に表示され続けますが、以後は送信されません。
+            会話はこのブラウザの localStorage に保存され、ページを開くたびに表示が復元されます。
           </p>
           <p class="hint" id="historyStats">保存済み履歴: まだありません</p>
           <p class="hint">
-            注意: 全履歴を毎回読み込むと、その分だけ毎回のトークン消費（クォータ）が増えます。履歴が長くなり続けると、やがてモデルのコンテキスト上限に達してエラーになることがあります。その場合は下のボタンで履歴を削除してください。
+            注意: 同じチャット内の会話は毎回すべて送信されるため、1つのチャットが長くなるほど毎回のトークン消費（クォータ）が増えます。長くなってきたら、入力欄の上にある「要約して圧縮」ボタンで、それまでの会話を短い要約に置き換えて送信すると節約できます（画面上の履歴はそのまま残ります）。
           </p>
           <div class="key-actions">
             <button class="btn danger" id="deleteHistoryBtn" type="button">保存済みの全チャット履歴を削除</button>
@@ -543,8 +579,8 @@
             <label for="prefetchReplies">返信案の回答を事前生成する</label>
           </div>
           <p class="hint" id="prefetchHint">
-            オンにすると（「返信案ボタンを表示」がオンのときのみ有効）、返信案3つそれぞれに対するモデルの回答を、返信を読んでいる間に裏側で先に生成しておきます。回答が生成済みの返信案（ボタンに ● が付いたもの）を選ぶと、待ち時間なしでその回答が表示されます。
-            その代わり、1回の返信ごとに約3回分余分に生成リクエストを使うため、APIの利用上限（クォータ、429エラー）に早く達することがあります。事前生成に失敗した返信案は、選んだときに通常通りその場で生成されます。事前生成した回答は、選んだ1つだけが履歴に保存され、残りは破棄されます。
+            オンにすると（「返信案ボタンを表示」がオンのときのみ有効）、返信案3つそれぞれに対するモデルの回答を、返信を読んでいる間に裏側で先に生成しておきます。さらに、各回答の先の返信案とその回答まで、最大3段階先まで木構造に事前生成します。回答が生成済みの返信案（ボタンに ● が付いたもの）を選ぶと、待ち時間なしでその回答が表示され、続けて次の段階の返信案がそのままボタン表示されます。
+            その代わり、1回の返信ごとに最大で約52回（返信案の生成13回＋回答の生成39回）のAPI呼び出しが発生する場合があり、APIの利用上限（クォータ、429エラー）にかなり早く達することがあります。上限やエラーに当たった分岐はその先の生成が静かに止まり、準備済みの分岐だけが使えます。事前生成に失敗した返信案は、選んだときに通常通りその場で生成されます。事前生成した内容はメモリ上だけに保持され、履歴に保存されるのは実際に選んだ経路のメッセージだけです。
           </p>
         </div>
       </section>
@@ -552,7 +588,7 @@
       <main class="chat" id="chatLog" aria-live="polite">
         <div class="empty" id="emptyState">
           <h1>自分のAPIキーで使う Gemini チャット</h1>
-          <p>Google AI Studio で発行した Gemini APIキーを設定すると、そのままチャットを始められます。会話はこのブラウザに保存され、次に開いたときも過去の全チャットが読み込まれて続きから使えます（設定で変更できます）。</p>
+          <p>Google AI Studio で発行した Gemini APIキーを設定すると、そのままチャットを始められます。会話はこのブラウザに保存され、次に開いたときも表示されます。「新しいチャット」を押すと、前のチャットの内容は以後送信されなくなります。チャットが長くなったら「要約して圧縮」でトークンを節約できます。</p>
           <ol>
             <li>上の「設定」を開く</li>
             <li>APIキーを貼り付けて「接続テスト」</li>
@@ -563,6 +599,11 @@
       </main>
 
       <footer class="composer">
+        <div class="toast" id="toast" role="status" hidden></div>
+        <div class="composer-actions">
+          <button class="btn" id="summarizeBtn" type="button">要約して圧縮</button>
+          <span class="hint">このチャットの履歴を要約し、以後は要約＋新しいメッセージだけを送ってトークンを節約します（画面の履歴は残ります）</span>
+        </div>
         <div class="composer-box">
           <textarea id="input" rows="1" placeholder="メッセージを入力…" aria-label="メッセージ入力"></textarea>
           <button id="sendBtn" type="button">送信</button>
@@ -599,12 +640,13 @@
         temperature: document.getElementById("temperature"),
         temperatureOut: document.getElementById("temperatureOut"),
         maxTokens: document.getElementById("maxTokens"),
-        loadAllHistory: document.getElementById("loadAllHistory"),
         historyStats: document.getElementById("historyStats"),
         deleteHistoryBtn: document.getElementById("deleteHistoryBtn"),
         suggestReplies: document.getElementById("suggestReplies"),
         prefetchReplies: document.getElementById("prefetchReplies"),
         suggestions: document.getElementById("suggestions"),
+        summarizeBtn: document.getElementById("summarizeBtn"),
+        toast: document.getElementById("toast"),
         chatLog: document.getElementById("chatLog"),
         emptyState: document.getElementById("emptyState"),
         emptySettingsBtn: document.getElementById("emptySettingsBtn"),
@@ -613,10 +655,16 @@
         modelEcho: document.getElementById("modelEcho")
       };
 
-      // All saved entries, chronological: {role: "user"|"model", text, ts} or {role: "separator", ts}
+      // All saved entries, chronological: {role: "user"|"model", text, ts},
+      // {role: "separator", ts}, or {role: "summary", text, ts}
       var chatHistory = loadHistory();
-      // Index where the current segment (since last new-chat / page load) begins.
-      var segmentStart = chatHistory.length;
+      // Index where the current segment begins: just after the last
+      // separator. Older segments stay on screen and in storage but are
+      // never included in API requests.
+      var segmentStart = 0;
+      for (var segScan = chatHistory.length - 1; segScan >= 0; segScan--) {
+        if (chatHistory[segScan].role === "separator") { segmentStart = segScan + 1; break; }
+      }
       var generating = false;
       var abortController = null;
 
@@ -644,7 +692,6 @@
             systemPrompt: els.systemPrompt.value,
             temperature: parseFloat(els.temperature.value),
             maxTokens: parseInt(els.maxTokens.value, 10) || 8192,
-            loadAllHistory: els.loadAllHistory.checked,
             suggestReplies: els.suggestReplies.checked,
             prefetchReplies: els.prefetchReplies.checked
           }));
@@ -657,7 +704,7 @@
           if (!Array.isArray(arr)) return [];
           return arr.filter(function (h) {
             return h && (h.role === "separator" ||
-              ((h.role === "user" || h.role === "model") && typeof h.text === "string"));
+              ((h.role === "user" || h.role === "model" || h.role === "summary") && typeof h.text === "string"));
           });
         } catch (e) { return []; }
       }
@@ -668,15 +715,17 @@
         updateHistoryStats();
       }
       function updateHistoryStats() {
-        var count = 0, chars = 0;
+        var count = 0, chars = 0, summaries = 0;
         chatHistory.forEach(function (h) {
           if (h.role === "user" || h.role === "model") {
             count++;
             chars += (h.text || "").length;
+          } else if (h.role === "summary") {
+            summaries++;
           }
         });
         els.historyStats.textContent = count
-          ? "保存済み履歴: メッセージ " + count + "件 ・ 約 " + chars.toLocaleString() + " 文字"
+          ? "保存済み履歴: メッセージ " + count + "件 ・ 約 " + chars.toLocaleString() + " 文字" + (summaries ? " ・ 要約 " + summaries + "件" : "")
           : "保存済み履歴: まだありません";
       }
 
@@ -956,6 +1005,21 @@
         div.appendChild(span);
         els.chatLog.appendChild(div);
       }
+      function addSummaryBlock(text) {
+        if (els.emptyState && els.emptyState.parentNode) els.emptyState.remove();
+        var div = document.createElement("div");
+        div.className = "summary-block";
+        var label = document.createElement("div");
+        label.className = "summary-label";
+        label.textContent = "要約（ここまでの会話はこの要約に圧縮されました。以後の送信にはこの要約を使います）";
+        var body = document.createElement("div");
+        body.className = "summary-text";
+        body.textContent = text;
+        div.appendChild(label);
+        div.appendChild(body);
+        els.chatLog.appendChild(div);
+        scrollToBottom();
+      }
 
       /* ---------- sending ---------- */
       function setGenerating(on) {
@@ -964,13 +1028,41 @@
         els.sendBtn.classList.toggle("stop", on);
       }
 
+      // Entries of the current segment only: everything after the last
+      // separator. Older chats stay on screen and in storage, but are
+      // never sent to the API.
+      function segmentEntries() {
+        return chatHistory.slice(segmentStart);
+      }
+      // The latest summary inside the current segment, as
+      // {index (within the segment), text}, or null when there is none.
+      function latestSummary() {
+        var seg = segmentEntries();
+        for (var i = seg.length - 1; i >= 0; i--) {
+          if (seg[i].role === "summary") return { index: i, text: seg[i].text };
+        }
+        return null;
+      }
+      // What gets sent: within the current segment, if a summary exists,
+      // the summary as the leading context plus only the messages after
+      // it; otherwise every message of the segment.
       function currentContents() {
-        var source = els.loadAllHistory.checked ? chatHistory : chatHistory.slice(segmentStart);
-        return source.filter(function (h) {
-          return h.role === "user" || h.role === "model";
-        }).map(function (h) {
-          return { role: h.role, parts: [{ text: h.text }] };
-        });
+        var seg = segmentEntries();
+        var sum = latestSummary();
+        var contents = [];
+        var start = 0;
+        if (sum) {
+          contents.push({ role: "user", parts: [{ text: "【これまでの会話の要約】\n" + sum.text }] });
+          contents.push({ role: "model", parts: [{ text: "承知しました。その要約を踏まえて会話を続けます。" }] });
+          start = sum.index + 1;
+        }
+        for (var i = start; i < seg.length; i++) {
+          var h = seg[i];
+          if (h.role === "user" || h.role === "model") {
+            contents.push({ role: h.role, parts: [{ text: h.text }] });
+          }
+        }
+        return contents;
       }
       function buildBody(contents) {
         var body = { contents: contents, generationConfig: {} };
@@ -1005,24 +1097,72 @@
         "各候補は短く（目安30文字以内、日本語で自然な一文）、ボタンに表示できる長さにしてください。\n" +
         "出力は候補の文面だけを1行に1つずつ、合計3行で返してください。番号・記号・引用符・説明や前置きは付けないでください。";
       var suggestionSeq = 0;
-      // Pre-generated answers behind the suggestions. Memory only: never
-      // written to localStorage or chatHistory. Exactly one level deep —
-      // a prefetch result never starts suggestions or further prefetches;
-      // only a main-flow model reply starts a new cycle.
+      // Pre-generated answers behind the suggestions, kept as a tree up
+      // to 3 levels deep. Memory only: never written to localStorage or
+      // chatHistory; only the path the user actually picks is saved.
+      // Level 1 = answers to the 3 visible suggestions. Each ready
+      // answer spawns its own 3 child suggestions and their answers
+      // (level 2), and so on up to level 3. Bumping prefetchSeq or
+      // replacing treeRoot discards the whole tree and stops any
+      // further generation from it.
+      var MAX_PREFETCH_DEPTH = 3;
       var prefetchSeq = 0;
-      var prefetchBranches = [];
+      var treeRoot = null;      // virtual depth-0 node of the live tree
+      var displayedNodes = [];  // tree nodes whose buttons are on screen
       var currentSuggestions = [];
       var applySeq = 0;
 
       function invalidatePrefetches() {
         prefetchSeq++;
-        prefetchBranches.forEach(function (br) {
-          if (br.btn) {
-            br.btn.classList.remove("ready");
-            br.btn.removeAttribute("title");
+        treeRoot = null;
+        displayedNodes.forEach(function (n) {
+          if (n.btn) {
+            n.btn.classList.remove("ready");
+            n.btn.removeAttribute("title");
           }
         });
-        prefetchBranches = [];
+        displayedNodes = [];
+      }
+      // A node stays usable only while it hangs under the current root
+      // and neither it nor an ancestor was discarded as a sibling.
+      function isLiveNode(node) {
+        var n = node;
+        while (n) {
+          if (n.dead) return false;
+          if (n === treeRoot) return true;
+          n = n.parent;
+        }
+        return false;
+      }
+      function makePrefetchNode(text, depth, parent, contextBefore) {
+        return {
+          text: text,
+          depth: depth,
+          parent: parent,
+          dead: false,
+          status: "pending", // answer: "pending" | "ready" | "error"
+          answer: "",
+          usage: null,
+          model: getModel(),
+          btn: null,
+          promise: null,
+          contextBefore: contextBefore, // contents up to the parent exchange
+          contextAfter: null,           // contextBefore + this exchange
+          suggStatus: "none", // children: "none" | "pending" | "ready" | "error"
+          children: [],
+          suggPromise: null
+        };
+      }
+      function markBtnReady(node) {
+        if (!node.btn) return;
+        node.btn.classList.add("ready");
+        if (!node.btn.querySelector(".ready-dot")) {
+          var dot = document.createElement("span");
+          dot.className = "ready-dot";
+          dot.setAttribute("aria-hidden", "true");
+          node.btn.appendChild(dot);
+        }
+        node.btn.title = "回答を生成済みです。押すとすぐに表示されます";
       }
       function clearSuggestions() {
         suggestionSeq++;
@@ -1079,19 +1219,46 @@
         els.suggestions.hidden = false;
         return btns;
       }
+      // Show one level of the prefetch tree as the suggestion buttons.
+      // No API calls happen here: children that are already ready get
+      // their ● at once; pending ones are marked by their completion
+      // handler when they land.
+      function renderNodeButtons(nodes) {
+        els.suggestions.innerHTML = "";
+        currentSuggestions = nodes.map(function (n) { return n.text; });
+        displayedNodes = nodes;
+        var label = document.createElement("span");
+        label.className = "sugg-label";
+        label.textContent = "返信案:";
+        els.suggestions.appendChild(label);
+        nodes.forEach(function (node, idx) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "sugg-btn";
+          b.textContent = node.text;
+          b.addEventListener("click", function () { onSuggestionClick(idx); });
+          els.suggestions.appendChild(b);
+          node.btn = b;
+          if (node.status === "ready") markBtnReady(node);
+        });
+        var x = document.createElement("button");
+        x.type = "button";
+        x.className = "sugg-dismiss";
+        x.textContent = "×";
+        x.setAttribute("aria-label", "返信案を閉じる");
+        x.addEventListener("click", clearSuggestions);
+        els.suggestions.appendChild(x);
+        els.suggestions.hidden = false;
+      }
       function generateSuggestions() {
         if (!els.suggestReplies.checked) return;
         var key = getKey();
         if (!key) return;
         var seq = ++suggestionSeq;
         showSuggestionLoading();
-        // Same conversation context as the main request.
-        var source = els.loadAllHistory.checked ? chatHistory : chatHistory.slice(segmentStart);
-        var contents = source.filter(function (h) {
-          return h.role === "user" || h.role === "model";
-        }).map(function (h) {
-          return { role: h.role, parts: [{ text: h.text }] };
-        });
+        // Same conversation context as the main request: the current
+        // segment only, with the latest summary applied.
+        var contents = currentContents();
         contents.push({ role: "user", parts: [{ text: SUGGEST_INSTRUCTION }] });
         var body = { contents: contents, generationConfig: { maxOutputTokens: 512 } };
         var temp = parseFloat(els.temperature.value);
@@ -1108,7 +1275,7 @@
           var list = parseSuggestions(extractText(json));
           if (list.length) {
             var btns = renderSuggestions(list);
-            startPrefetches(list, btns);
+            startPrefetchTree(list, btns);
           } else {
             els.suggestions.hidden = true;
             els.suggestions.innerHTML = "";
@@ -1121,82 +1288,163 @@
         });
       }
 
-      /* ---------- pre-generated answers (prefetch) ---------- */
-      // As soon as the 3 suggestions are shown, fire one non-streaming
-      // generateContent request per candidate in the background, using the
-      // same context snapshot and settings a normal send would use right
-      // now, with the candidate appended as the final user message.
-      function startPrefetches(list, btns) {
+      /* ---------- pre-generated answers (3-level prefetch tree) ---------- */
+      // Generation flows outward by completion, shallow levels first:
+      // the 3 level-1 answers start as soon as the suggestions are
+      // shown; whenever an answer lands, that branch's child suggestions
+      // and their answers start next, up to level 3. Each branch's
+      // context is the base context (current segment, latest summary
+      // applied) plus the path of picked candidates and answers leading
+      // to it. Any failure (429 included) quietly stops only that
+      // branch's deeper generation — ready shallower branches stay
+      // usable and no error is ever shown for a prefetch.
+      function suggestionRequestBody(contents) {
+        var body = { contents: contents, generationConfig: { maxOutputTokens: 512 } };
+        var temp = parseFloat(els.temperature.value);
+        if (!isNaN(temp)) body.generationConfig.temperature = temp;
+        return body;
+      }
+      function kickNodeAnswer(node, seq) {
+        var key = getKey();
+        if (!key) {
+          node.status = "error";
+          node.promise = Promise.resolve(node);
+          return;
+        }
+        var contents = node.contextBefore.concat([{ role: "user", parts: [{ text: node.text }] }]);
+        var body = buildBody(contents);
+        // The promise never rejects: the outcome lands on node.status.
+        node.promise = fetch(API_BASE + "/models/" + encodeURIComponent(node.model) + ":generateContent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: JSON.stringify(body)
+        }).then(function (res) {
+          if (!res.ok) throw new Error("prefetch failed");
+          return res.json();
+        }).then(function (json) {
+          var text = extractText(json);
+          if (!text) throw new Error("prefetch empty");
+          node.answer = text;
+          node.usage = json.usageMetadata || null;
+          node.status = "ready";
+          node.contextAfter = contents.concat([{ role: "model", parts: [{ text: text }] }]);
+          if (seq !== prefetchSeq || !isLiveNode(node)) return node;
+          markBtnReady(node);
+          if (node.depth < MAX_PREFETCH_DEPTH) kickNodeSuggestions(node, seq);
+          return node;
+        }).catch(function () {
+          // Silent per-branch failure: deeper generation for this
+          // branch stops; tapping it falls back to a live send.
+          node.status = "error";
+          return node;
+        });
+      }
+      function kickNodeSuggestions(node, seq) {
+        var key = getKey();
+        if (!key) { node.suggStatus = "error"; return; }
+        node.suggStatus = "pending";
+        var contents = node.contextAfter.concat([{ role: "user", parts: [{ text: SUGGEST_INSTRUCTION }] }]);
+        node.suggPromise = fetch(API_BASE + "/models/" + encodeURIComponent(node.model) + ":generateContent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: JSON.stringify(suggestionRequestBody(contents))
+        }).then(function (res) {
+          if (!res.ok) throw new Error("prefetch suggestions failed");
+          return res.json();
+        }).then(function (json) {
+          if (seq !== prefetchSeq || !isLiveNode(node)) return;
+          var list = parseSuggestions(extractText(json));
+          if (!list.length) { node.suggStatus = "error"; return; }
+          node.children = list.map(function (text) {
+            return makePrefetchNode(text, node.depth + 1, node, node.contextAfter);
+          });
+          node.suggStatus = "ready";
+          node.children.forEach(function (child) { kickNodeAnswer(child, seq); });
+        }).catch(function () {
+          // Silent: this branch simply has no pre-generated children.
+          node.suggStatus = "error";
+        });
+      }
+      // Build the tree under the just-shown level-1 suggestions and
+      // start generating their answers.
+      function startPrefetchTree(list, btns) {
+        treeRoot = null;
+        displayedNodes = [];
         if (!els.suggestReplies.checked || !els.prefetchReplies.checked) return;
         var key = getKey();
         if (!key) return;
         var seq = ++prefetchSeq;
-        var model = getModel();
         var base = currentContents();
-        prefetchBranches = list.map(function (text, i) {
-          return {
-            text: text,
-            status: "pending", // "pending" | "ready" | "error"
-            answer: "",
-            usage: null,
-            model: model,
-            btn: btns[i] || null,
-            promise: null
-          };
+        var root = makePrefetchNode("", 0, null, null);
+        root.status = "ready";
+        root.suggStatus = "ready";
+        root.contextAfter = base;
+        treeRoot = root;
+        root.children = list.map(function (text, i) {
+          var n = makePrefetchNode(text, 1, root, base);
+          n.btn = btns[i] || null;
+          return n;
         });
-        prefetchBranches.forEach(function (br) {
-          var contents = base.concat([{ role: "user", parts: [{ text: br.text }] }]);
-          var body = buildBody(contents);
-          // The promise never rejects: the outcome lands on br.status.
-          br.promise = fetch(API_BASE + "/models/" + encodeURIComponent(model) + ":generateContent", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-            body: JSON.stringify(body)
-          }).then(function (res) {
-            if (!res.ok) throw new Error("prefetch failed");
-            return res.json();
-          }).then(function (json) {
-            var text = extractText(json);
-            if (!text) throw new Error("prefetch empty");
-            br.answer = text;
-            br.usage = json.usageMetadata || null;
-            br.status = "ready";
-            if (seq === prefetchSeq && br.btn) {
-              br.btn.classList.add("ready");
-              var dot = document.createElement("span");
-              dot.className = "ready-dot";
-              dot.setAttribute("aria-hidden", "true");
-              br.btn.appendChild(dot);
-              br.btn.title = "回答を生成済みです。押すとすぐに表示されます";
-            }
-            return br;
-          }).catch(function () {
-            // Silent per-branch failure: tapping falls back to a live send.
-            br.status = "error";
-            return br;
-          });
+        displayedNodes = root.children;
+        root.children.forEach(function (n) { kickNodeAnswer(n, seq); });
+      }
+
+      function hideSuggestionButtons() {
+        displayedNodes = [];
+        els.suggestions.hidden = true;
+        els.suggestions.innerHTML = "";
+      }
+      function discardSiblings(node) {
+        if (!node.parent) return;
+        node.parent.children.forEach(function (sib) {
+          if (sib !== node) sib.dead = true;
         });
       }
 
       function onSuggestionClick(idx) {
         if (generating) return;
-        var br = prefetchBranches[idx];
-        if (br && br.status === "ready") { applyReadyBranch(br); return; }
-        if (br && br.status === "pending" && br.promise) { applyPendingBranch(br); return; }
-        // No branch (prefetch off / invalidated) or an errored branch:
-        // fall back to the normal live send flow.
+        var node = displayedNodes[idx];
+        if (node) {
+          if (node.status === "ready") { applyReadyNode(node); return; }
+          if (node.status === "pending" && node.promise) { applyPendingNode(node); return; }
+          // Errored branch: fall back to the normal live send flow.
+          els.input.value = node.text;
+          sendMessage();
+          return;
+        }
+        // No tree (prefetch off): fall back to the normal live send flow.
         var text = currentSuggestions[idx];
         if (!text) return;
         els.input.value = text;
         sendMessage();
       }
 
+      // After a branch is applied, show its children as the new buttons
+      // when they are already generated (no API call, ● included). If
+      // the children are still generating, missing, or stopped, fall
+      // back to a live suggestion round, which re-roots a fresh
+      // 3-level prefetch tree from the new context.
+      function presentChildren(node) {
+        treeRoot = node; // re-root: sibling subtrees are discarded
+        if (node.suggStatus === "ready" && node.children.length) {
+          renderNodeButtons(node.children);
+        } else {
+          displayedNodes = [];
+          generateSuggestions();
+        }
+        els.input.focus();
+      }
+
       // Ready branch: show the cached answer instantly, no API wait.
-      // Only the chosen pair is saved to history; the other branches are
-      // discarded, then the next suggestion + prefetch cycle starts.
-      function applyReadyBranch(br) {
-        var cand = br.text, ans = br.answer, usage = br.usage, model = br.model;
-        clearSuggestions();
+      // Only the chosen pair is saved to history; the sibling branches
+      // are discarded, and the chosen branch's children (if generated)
+      // become the new suggestion buttons immediately.
+      function applyReadyNode(node) {
+        var cand = node.text, ans = node.answer, usage = node.usage, model = node.model;
+        discardSiblings(node);
+        suggestionSeq++;
+        applySeq++;
+        hideSuggestionButtons();
         hideStatus();
         chatHistory.push({ role: "user", text: cand, ts: Date.now() });
         addMessage("user", cand);
@@ -1206,17 +1454,20 @@
         chatHistory.push({ role: "model", text: ans, ts: Date.now() });
         saveHistory();
         scrollToBottom();
-        generateSuggestions();
-        els.input.focus();
+        presentChildren(node);
       }
 
       // Pending branch: reuse the in-flight prefetch (never a duplicate
-      // request). Post the user message with the waiting placeholder, then
-      // swap in the prefetch result when it lands.
-      function applyPendingBranch(br) {
-        var cand = br.text, model = br.model, promise = br.promise;
-        clearSuggestions();
+      // request). Post the user message with the waiting placeholder,
+      // then swap in the prefetch result when it lands. The branch's
+      // children keep generating meanwhile under the same tree.
+      function applyPendingNode(node) {
+        var cand = node.text, model = node.model, promise = node.promise;
+        discardSiblings(node);
+        suggestionSeq++;
+        applySeq++;
         var myApply = applySeq;
+        hideSuggestionButtons();
         hideStatus();
         chatHistory.push({ role: "user", text: cand, ts: Date.now() });
         saveHistory();
@@ -1232,16 +1483,15 @@
             if (generating) setGenerating(false);
             return;
           }
-          if (br.status === "ready" && br.answer) {
-            refs.bubble.innerHTML = renderMarkdown(br.answer);
-            refs.bubble.setAttribute("data-raw", br.answer);
-            addMeta(refs.bubble, model, br.usage);
-            chatHistory.push({ role: "model", text: br.answer, ts: Date.now() });
+          if (node.status === "ready" && node.answer) {
+            refs.bubble.innerHTML = renderMarkdown(node.answer);
+            refs.bubble.setAttribute("data-raw", node.answer);
+            addMeta(refs.bubble, model, node.usage);
+            chatHistory.push({ role: "model", text: node.answer, ts: Date.now() });
             saveHistory();
             scrollToBottom();
             setGenerating(false);
-            generateSuggestions();
-            els.input.focus();
+            presentChildren(node);
           } else {
             // The prefetch failed after all: undo the optimistic post and
             // run the normal live send for this candidate.
@@ -1414,6 +1664,93 @@
         els.input.focus();
       });
 
+      /* ---------- summarize & compress ---------- */
+      // One non-streaming request turns the current segment's sendable
+      // context (the previous summary, if any, plus the messages after
+      // it) into a short summary. The summary is saved as its own history
+      // entry and shown as a block; the on-screen messages stay, but
+      // later requests send only "summary + messages after it".
+      var summarizing = false;
+      var toastTimer = null;
+      function showToast(text, isError) {
+        els.toast.textContent = text;
+        els.toast.classList.toggle("err", !!isError);
+        els.toast.hidden = false;
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { els.toast.hidden = true; }, 5000);
+      }
+      function summarizeChat() {
+        if (summarizing) return;
+        if (generating) {
+          showToast("返信の生成中は要約できません。終わってからお試しください。", true);
+          return;
+        }
+        var key = getKey();
+        if (!key) {
+          showToast("APIキーが設定されていません。設定パネルを開いて Gemini APIキーを入力してください。", true);
+          setSettingsOpen(true);
+          return;
+        }
+        var seg = segmentEntries();
+        var sum = latestSummary();
+        var after = seg.slice(sum ? sum.index + 1 : 0).filter(function (h) {
+          return h.role === "user" || h.role === "model";
+        });
+        if (!after.length) {
+          showToast(sum
+            ? "前回の要約のあとに、新しいメッセージがまだありません。"
+            : "このチャットにはまだメッセージがありません。", false);
+          return;
+        }
+        var lines = [];
+        if (sum) lines.push("【前回までの要約】\n" + sum.text);
+        after.forEach(function (h) {
+          lines.push((h.role === "user" ? "ユーザー" : "アシスタント") + ": " + h.text);
+        });
+        var prompt =
+          "次の会話履歴を、会話を続けるために必要な要点（話題の流れ、決まったこと、ユーザーの希望や条件、まだ答えていない質問など）を保ちながら、短い日本語の要約文にまとめてください。\n" +
+          "出力は要約文だけにしてください。前置きや見出しは不要です。\n\n" +
+          "--- 会話履歴 ---\n" + lines.join("\n\n");
+        summarizing = true;
+        els.summarizeBtn.disabled = true;
+        els.summarizeBtn.textContent = "要約中…";
+        var body = {
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 1024 }
+        };
+        fetch(API_BASE + "/models/" + encodeURIComponent(getModel()) + ":generateContent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: JSON.stringify(body)
+        }).then(function (res) {
+          if (!res.ok) return apiErrorFromResponse(res);
+          return res.json();
+        }).then(function (json) {
+          var text = extractText(json).trim();
+          if (!text) throw new Error("モデルから要約が返りませんでした。もう一度お試しください。");
+          chatHistory.push({ role: "summary", text: text, ts: Date.now() });
+          saveHistory();
+          addSummaryBlock(text);
+          // The context changed: visible suggestions and any pre-generated
+          // answers no longer match, so drop them. The summary itself is
+          // never a suggestion or prefetch target.
+          clearSuggestions();
+          showToast("要約しました。以後の送信は「要約＋新しいメッセージ」だけになり、トークンを節約できます。", false);
+        }).catch(function (err) {
+          if (err instanceof TypeError) {
+            showToast("ネットワークに接続できませんでした。要約は行われていません。", true);
+          } else {
+            showToast("要約に失敗しました。要約は行われていません。\n" + (err.message || ""), true);
+          }
+        }).then(function () {
+          summarizing = false;
+          els.summarizeBtn.disabled = false;
+          els.summarizeBtn.textContent = "要約して圧縮";
+          els.input.focus();
+        });
+      }
+      els.summarizeBtn.addEventListener("click", summarizeChat);
+
       /* ---------- delete all saved history (two-step confirm) ---------- */
       var deleteArmed = false;
       var deleteTimer = null;
@@ -1455,8 +1792,7 @@
         el.addEventListener("change", invalidatePrefetches);
       });
       els.systemPrompt.addEventListener("input", invalidatePrefetches);
-      els.loadAllHistory.addEventListener("change", invalidatePrefetches);
-      [els.modelSelect, els.customModel, els.systemPrompt, els.temperature, els.maxTokens, els.loadAllHistory, els.suggestReplies, els.prefetchReplies].forEach(function (el) {
+      [els.modelSelect, els.customModel, els.systemPrompt, els.temperature, els.maxTokens, els.suggestReplies, els.prefetchReplies].forEach(function (el) {
         el.addEventListener("input", function () {
           els.temperatureOut.textContent = parseFloat(els.temperature.value).toFixed(1);
           saveSettings();
@@ -1486,13 +1822,14 @@
           els.temperatureOut.textContent = s.temperature.toFixed(1);
         }
         if (s.maxTokens) els.maxTokens.value = s.maxTokens;
-        if (typeof s.loadAllHistory === "boolean") els.loadAllHistory.checked = s.loadAllHistory;
         if (typeof s.suggestReplies === "boolean") els.suggestReplies.checked = s.suggestReplies;
         if (typeof s.prefetchReplies === "boolean") els.prefetchReplies.checked = s.prefetchReplies;
         // Restore all saved past messages in chronological order.
         chatHistory.forEach(function (h) {
           if (h.role === "separator") {
             addSeparator();
+          } else if (h.role === "summary") {
+            addSummaryBlock(h.text);
           } else {
             var refs = addMessage(h.role, h.text);
             if (h.role === "model") {
