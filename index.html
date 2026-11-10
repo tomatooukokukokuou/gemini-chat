@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:," />
+    <title>Gemini Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f2f3f1;
+        --surface: #ffffff;
+        --surface-2: #e9ebe7;
+        --ink: #17211c;
+        --ink-soft: #4b5750;
+        --ink-faint: #77837c;
+        --line: #d8dcd6;
+        --accent: #0c6b4f;
+        --accent-strong: #095a42;
+        --accent-ink: #ffffff;
+        --accent-soft: #e2efe9;
+        --user-bubble: #0c6b4f;
+        --user-ink: #ffffff;
+        --danger: #b3261e;
+        --danger-bg: #fbeae8;
+        --warn-bg: #fdf3e0;
+        --warn-ink: #7a5410;
+        --code-bg: #eef0ec;
+        --shadow: 0 10px 30px rgba(23, 33, 28, 0.10);
+        --radius: 14px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #10140f;
+          --surface: #1a201a;
+          --surface-2: #232a23;
+          --ink: #e8ede8;
+          --ink-soft: #aab6ac;
+          --ink-faint: #7e8b80;
+          --line: #303a30;
+          --accent: #3ec79b;
+          --accent-strong: #5ad6ae;
+          --accent-ink: #06231a;
+          --accent-soft: #173028;
+          --user-bubble: #14503c;
+          --user-ink: #eafaf2;
+          --danger: #ff9d94;
+          --danger-bg: #3a1d1a;
+          --warn-bg: #3a2f16;
+          --warn-ink: #f2cd7e;
+          --code-bg: #12160f;
+          --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", sans-serif;
+        font-size: 15.5px;
+        line-height: 1.65;
+        -webkit-text-size-adjust: 100%;
+      }
+      button, select, input, textarea { font: inherit; color: inherit; }
+      button, [role="button"], select, summary, input:not([type="checkbox"], [type="radio"]) { min-height: 2.25rem; }
+      button { cursor: pointer; }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      .app {
+        display: flex;
+        flex-direction: column;
+        height: 100dvh;
+        max-width: 880px;
+        margin: 0 auto;
+      }
+
+      /* ---------- Toolbar ---------- */
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+        flex-wrap: wrap;
+      }
+      .toolbar .model-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .toolbar label.model-label {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--ink-soft);
+        white-space: nowrap;
+      }
+      #modelSelect {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: 340px;
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 13.5px;
+      }
+      .key-state {
+        font-size: 12.5px;
+        color: var(--ink-faint);
+        white-space: nowrap;
+      }
+      .key-state.ok { color: var(--accent); font-weight: 700; }
+      .toolbar .spacer { flex: 1 1 auto; }
+      .btn {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        border-radius: 10px;
+        padding: 6px 14px;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .btn:hover { background: var(--surface-2); }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-ink);
+        font-weight: 700;
+      }
+      .btn.primary:hover { background: var(--accent-strong); }
+      .btn:disabled { opacity: 0.5; cursor: default; }
+      .btn[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent); }
+
+      /* ---------- Settings panel ---------- */
+      .settings {
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+        padding: 16px;
+        overflow-y: auto;
+        max-height: 78dvh;
+      }
+      .settings[hidden] { display: none; }
+      .settings h2 {
+        font-size: 15px;
+        margin: 0 0 4px;
+      }
+      .settings .field { margin-top: 14px; }
+      .settings label.f-label {
+        display: block;
+        font-size: 13px;
+        font-weight: 700;
+        margin-bottom: 5px;
+      }
+      .settings .hint {
+        font-size: 12.5px;
+        color: var(--ink-soft);
+        margin-top: 5px;
+      }
+      .key-row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .key-row input {
+        flex: 1 1 220px;
+        min-width: 0;
+        padding: 7px 11px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 13.5px;
+      }
+      .key-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+      .settings textarea, .settings input[type="text"], .settings input[type="number"] {
+        width: 100%;
+        padding: 8px 11px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+      .settings textarea { resize: vertical; min-height: 64px; }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      @media (max-width: 560px) { .grid-2 { grid-template-columns: 1fr; } }
+      .range-row { display: flex; align-items: center; gap: 10px; }
+      .range-row input[type="range"] { flex: 1 1 auto; accent-color: var(--accent); }
+      .range-row output {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 13.5px;
+        min-width: 3ch;
+        text-align: right;
+      }
+      .status {
+        margin-top: 12px;
+        padding: 9px 12px;
+        border-radius: 10px;
+        font-size: 13.5px;
+        display: none;
+      }
+      .status.show { display: block; }
+      .status.ok { background: var(--accent-soft); }
+      .status.err { background: var(--danger-bg); color: var(--danger); }
+      .status.info { background: var(--warn-bg); color: var(--warn-ink); }
+      .settings a { color: var(--accent); }
+
+      /* ---------- Chat log ---------- */
+      .chat {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding: 20px 16px 12px;
+        overscroll-behavior: contain;
+      }
+      .empty {
+        max-width: 560px;
+        margin: 7vh auto 0;
+        text-align: left;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 22px 24px;
+      }
+      .empty h1 { font-size: 21px; margin: 0 0 8px; line-height: 1.4; }
+      .empty p { margin: 6px 0; color: var(--ink-soft); font-size: 14.5px; }
+      .empty ol { margin: 10px 0 4px; padding-left: 1.4em; color: var(--ink-soft); font-size: 14.5px; }
+      .empty .btn { margin-top: 12px; }
+      .msg { display: flex; margin-bottom: 16px; gap: 10px; }
+      .msg.user { justify-content: flex-end; }
+      .bubble {
+        max-width: min(78%, 640px);
+        padding: 11px 15px;
+        border-radius: 16px;
+        overflow-wrap: anywhere;
+      }
+      @media (max-width: 560px) { .bubble { max-width: 88%; } }
+      .msg.model .bubble {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-bottom-left-radius: 5px;
+      }
+      .msg.user .bubble {
+        background: var(--user-bubble);
+        color: var(--user-ink);
+        border-bottom-right-radius: 5px;
+        white-space: pre-wrap;
+      }
+      .msg.error .bubble {
+        background: var(--danger-bg);
+        color: var(--danger);
+        border: 1px solid var(--danger);
+        max-width: min(88%, 640px);
+      }
+      .bubble p { margin: 0 0 10px; }
+      .bubble p:last-child { margin-bottom: 0; }
+      .bubble ul, .bubble ol { margin: 4px 0 10px; padding-left: 1.5em; }
+      .bubble li { margin: 2px 0; }
+      .bubble h3, .bubble h4, .bubble h5 { margin: 12px 0 5px; font-size: 15.5px; }
+      .bubble h3:first-child, .bubble h4:first-child { margin-top: 0; }
+      .bubble code {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.88em;
+        background: var(--code-bg);
+        padding: 1px 5px;
+        border-radius: 5px;
+      }
+      .bubble pre {
+        background: var(--code-bg);
+        border-radius: 10px;
+        padding: 12px 14px;
+        overflow-x: auto;
+        margin: 8px 0 10px;
+      }
+      .bubble pre code { background: none; padding: 0; font-size: 13px; line-height: 1.55; }
+      .bubble a { color: var(--accent); }
+      .bubble blockquote {
+        margin: 8px 0;
+        padding: 2px 12px;
+        border-left: 3px solid var(--line);
+        color: var(--ink-soft);
+      }
+      .meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 7px;
+        font-size: 12px;
+        color: var(--ink-faint);
+      }
+      .meta button {
+        border: none;
+        background: none;
+        color: var(--ink-faint);
+        padding: 4px 6px;
+        min-height: 2rem;
+        font-size: 12px;
+        text-decoration: underline;
+      }
+      .meta button:hover { color: var(--accent); }
+      .typing { display: inline-flex; gap: 4px; padding: 4px 0; }
+      .typing span {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: var(--ink-faint);
+        animation: blink 1.2s infinite;
+      }
+      .typing span:nth-child(2) { animation-delay: 0.2s; }
+      .typing span:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) {
+        .typing span { animation: none; opacity: 0.6; }
+      }
+
+      /* ---------- Composer ---------- */
+      .composer {
+        border-top: 1px solid var(--line);
+        background: var(--surface);
+        padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+      }
+      .composer-box {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 8px 8px 8px 14px;
+        background: var(--surface);
+      }
+      .composer-box:focus-within { border-color: var(--accent); box-shadow: var(--shadow); }
+      #input {
+        flex: 1 1 auto;
+        min-width: 0;
+        border: none;
+        background: none;
+        resize: none;
+        max-height: 180px;
+        padding: 6px 0;
+        line-height: 1.55;
+      }
+      #input:focus { outline: none; }
+      #sendBtn {
+        flex: 0 0 auto;
+        border: none;
+        border-radius: 12px;
+        background: var(--accent);
+        color: var(--accent-ink);
+        font-weight: 700;
+        padding: 8px 18px;
+        min-height: 2.5rem;
+      }
+      #sendBtn:hover { background: var(--accent-strong); }
+      #sendBtn:disabled { opacity: 0.45; cursor: default; }
+      #sendBtn.stop { background: var(--danger); color: #fff; }
+      .composer .foot {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 7px;
+        font-size: 12px;
+        color: var(--ink-faint);
+        flex-wrap: wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="toolbar">
+        <div class="model-wrap">
+          <label class="model-label" for="modelSelect">モデル</label>
+          <select id="modelSelect" aria-label="使用するモデル">
+            <option value="gemini-3.5-flash-lite" selected>gemini-3.5-flash-lite</option>
+            <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+            <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+            <option value="gemini-flash-latest">gemini-flash-latest</option>
+            <option value="gemma-4-31b-it">gemma-4-31b-it</option>
+          </select>
+          <span class="key-state" id="keyState">APIキー未設定</span>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn" id="settingsToggle" aria-expanded="false" aria-controls="settingsPanel">設定</button>
+        <button class="btn" id="newChatBtn">新しいチャット</button>
+      </header>
+
+      <section class="settings" id="settingsPanel" hidden aria-label="設定">
+        <h2>設定</h2>
+
+        <div class="field">
+          <label class="f-label" for="apiKey">Gemini APIキー</label>
+          <div class="key-row">
+            <input type="password" id="apiKey" placeholder="AIza…" autocomplete="off" spellcheck="false" />
+            <button class="btn" id="toggleKeyBtn" type="button">表示する</button>
+            <button class="btn" id="clearKeyBtn" type="button">キーを削除</button>
+          </div>
+          <p class="hint">
+            キーはこのブラウザの localStorage にだけ保存され、送信先は Google の Gemini API（generativelanguage.googleapis.com）のみです。
+            キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> で無料で発行できます。
+          </p>
+          <div class="key-actions">
+            <button class="btn primary" id="testBtn" type="button">接続テスト</button>
+            <button class="btn" id="fetchModelsBtn" type="button">モデル一覧を取得</button>
+          </div>
+          <div class="status" id="settingsStatus" role="status"></div>
+        </div>
+
+        <div class="field">
+          <label class="f-label" for="customModel">カスタムモデル名（任意）</label>
+          <input type="text" id="customModel" placeholder="例: gemini-2.5-pro など。入力すると上の選択より優先されます" spellcheck="false" />
+        </div>
+
+        <div class="field">
+          <label class="f-label" for="systemPrompt">システムプロンプト（任意）</label>
+          <textarea id="systemPrompt" placeholder="例: あなたは丁寧な日本語で答えるアシスタントです。"></textarea>
+          <p class="hint">新しいチャットを始めたときから反映されます（途中で変えた場合は次の送信から有効です）。</p>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label class="f-label" for="temperature">Temperature（創造性）</label>
+            <div class="range-row">
+              <input type="range" id="temperature" min="0" max="2" step="0.1" value="1.0" />
+              <output id="temperatureOut" for="temperature">1.0</output>
+            </div>
+          </div>
+          <div class="field">
+            <label class="f-label" for="maxTokens">最大出力トークン数</label>
+            <input type="number" id="maxTokens" min="64" max="65536" step="64" value="8192" />
+          </div>
+        </div>
+      </section>
+
+      <main class="chat" id="chatLog" aria-live="polite">
+        <div class="empty" id="emptyState">
+          <h1>自分のAPIキーで使う Gemini チャット</h1>
+          <p>Google AI Studio で発行した Gemini APIキーを設定すると、そのままチャットを始められます。会話の文脈はこのチャットの中で保持されます。</p>
+          <ol>
+            <li>上の「設定」を開く</li>
+            <li>APIキーを貼り付けて「接続テスト」</li>
+            <li>下の入力欄からメッセージを送信</li>
+          </ol>
+          <button class="btn primary" id="emptySettingsBtn" type="button">設定を開いてAPIキーを入れる</button>
+        </div>
+      </main>
+
+      <footer class="composer">
+        <div class="composer-box">
+          <textarea id="input" rows="1" placeholder="メッセージを入力…" aria-label="メッセージ入力"></textarea>
+          <button id="sendBtn" type="button">送信</button>
+        </div>
+        <div class="foot">
+          <span>Enter で送信 / Shift + Enter で改行</span>
+          <span id="modelEcho"></span>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      "use strict";
+      var API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+      var LS_KEY = "gemini-chat:api-key";
+      var LS_SETTINGS = "gemini-chat:settings";
+
+      var els = {
+        modelSelect: document.getElementById("modelSelect"),
+        keyState: document.getElementById("keyState"),
+        settingsToggle: document.getElementById("settingsToggle"),
+        settingsPanel: document.getElementById("settingsPanel"),
+        newChatBtn: document.getElementById("newChatBtn"),
+        apiKey: document.getElementById("apiKey"),
+        toggleKeyBtn: document.getElementById("toggleKeyBtn"),
+        clearKeyBtn: document.getElementById("clearKeyBtn"),
+        testBtn: document.getElementById("testBtn"),
+        fetchModelsBtn: document.getElementById("fetchModelsBtn"),
+        settingsStatus: document.getElementById("settingsStatus"),
+        customModel: document.getElementById("customModel"),
+        systemPrompt: document.getElementById("systemPrompt"),
+        temperature: document.getElementById("temperature"),
+        temperatureOut: document.getElementById("temperatureOut"),
+        maxTokens: document.getElementById("maxTokens"),
+        chatLog: document.getElementById("chatLog"),
+        emptyState: document.getElementById("emptyState"),
+        emptySettingsBtn: document.getElementById("emptySettingsBtn"),
+        input: document.getElementById("input"),
+        sendBtn: document.getElementById("sendBtn"),
+        modelEcho: document.getElementById("modelEcho")
+      };
+
+      var chatHistory = []; // {role: "user"|"model", text: string}
+      var generating = false;
+      var abortController = null;
+
+      /* ---------- storage ---------- */
+      function loadKey() {
+        try { return localStorage.getItem(LS_KEY) || ""; } catch (e) { return ""; }
+      }
+      function saveKey(k) {
+        try {
+          if (k) localStorage.setItem(LS_KEY, k);
+          else localStorage.removeItem(LS_KEY);
+        } catch (e) { /* storage unavailable */ }
+      }
+      function loadSettings() {
+        try {
+          var raw = localStorage.getItem(LS_SETTINGS);
+          return raw ? JSON.parse(raw) : {};
+        } catch (e) { return {}; }
+      }
+      function saveSettings() {
+        try {
+          localStorage.setItem(LS_SETTINGS, JSON.stringify({
+            model: els.modelSelect.value,
+            customModel: els.customModel.value.trim(),
+            systemPrompt: els.systemPrompt.value,
+            temperature: parseFloat(els.temperature.value),
+            maxTokens: parseInt(els.maxTokens.value, 10) || 8192
+          }));
+        } catch (e) { /* ignore */ }
+      }
+
+      function getKey() { return els.apiKey.value.trim(); }
+      function getModel() {
+        var custom = els.customModel.value.trim();
+        return custom || els.modelSelect.value;
+      }
+
+      function updateKeyState() {
+        var has = !!getKey();
+        els.keyState.textContent = has ? "APIキー設定済み" : "APIキー未設定";
+        els.keyState.classList.toggle("ok", has);
+        els.modelEcho.textContent = "モデル: " + getModel();
+      }
+
+      /* ---------- settings panel ---------- */
+      function setSettingsOpen(open) {
+        els.settingsPanel.hidden = !open;
+        els.settingsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+        if (open) els.apiKey.focus();
+      }
+      els.settingsToggle.addEventListener("click", function () {
+        setSettingsOpen(els.settingsPanel.hidden);
+      });
+      els.emptySettingsBtn.addEventListener("click", function () { setSettingsOpen(true); });
+
+      els.toggleKeyBtn.addEventListener("click", function () {
+        var show = els.apiKey.type === "password";
+        els.apiKey.type = show ? "text" : "password";
+        els.toggleKeyBtn.textContent = show ? "隠す" : "表示する";
+      });
+      els.apiKey.addEventListener("input", function () {
+        saveKey(getKey());
+        updateKeyState();
+      });
+      els.clearKeyBtn.addEventListener("click", function () {
+        els.apiKey.value = "";
+        saveKey("");
+        updateKeyState();
+        showStatus("APIキーを削除しました。", "info");
+      });
+
+      function showStatus(text, kind) {
+        els.settingsStatus.textContent = text;
+        els.settingsStatus.className = "status show " + (kind || "info");
+      }
+      function hideStatus() {
+        els.settingsStatus.className = "status";
+        els.settingsStatus.textContent = "";
+      }
+
+      /* ---------- error messages ---------- */
+      function describeError(status, apiMessage) {
+        var base;
+        switch (status) {
+          case 400:
+            base = "リクエストの形式が正しくありません（400）。モデル名や入力内容を確認してください。存在しないモデル名を指定している場合もこのエラーになります。";
+            break;
+          case 401:
+            base = "APIキーが無効です（401）。キーが正しくコピーできているか、設定画面で確認してください。";
+            break;
+          case 403:
+            base = "このAPIキーではアクセスが許可されていません（403）。キーの権限や、対象プロジェクトで Gemini API が有効になっているかを確認してください。";
+            break;
+          case 429:
+            base = "利用上限（クォータ）に達しました（429）。無料枠の上限を超えた可能性があります。しばらく待ってから再試行するか、別のモデルを選んでください。";
+            break;
+          case 500:
+            base = "Gemini 側で内部エラーが発生しました（500）。少し待ってから再試行してください。";
+            break;
+          case 503:
+            base = "Gemini のサーバーが混み合っています（503）。少し待ってから再試行するか、軽量なモデル（gemini-3.5-flash-lite など）に切り替えてください。";
+            break;
+          default:
+            base = "エラーが発生しました（HTTP " + status + "）。";
+        }
+        if (apiMessage) base += "\n詳細: " + apiMessage;
+        return base;
+      }
+
+      function apiErrorFromResponse(res) {
+        return res.text().then(function (t) {
+          var msg = "";
+          try {
+            var j = JSON.parse(t);
+            if (j && j.error && j.error.message) msg = j.error.message;
+          } catch (e) { /* keep empty */ }
+          throw new Error(describeError(res.status, msg));
+        });
+      }
+
+      /* ---------- API calls ---------- */
+      function fetchModels() {
+        var key = getKey();
+        if (!key) {
+          showStatus("まずAPIキーを入力してください。", "err");
+          return Promise.resolve();
+        }
+        showStatus("モデル一覧を取得しています…", "info");
+        return fetch(API_BASE + "/models", {
+          headers: { "x-goog-api-key": key }
+        }).then(function (res) {
+          if (!res.ok) return apiErrorFromResponse(res);
+          return res.json();
+        }).then(function (data) {
+          var models = (data.models || []).filter(function (m) {
+            return (m.supportedGenerationMethods || []).indexOf("generateContent") !== -1;
+          }).map(function (m) {
+            return (m.name || "").replace(/^models\//, "");
+          }).filter(Boolean);
+          if (!models.length) {
+            showStatus("generateContent に対応するモデルが見つかりませんでした。", "err");
+            return;
+          }
+          var current = els.modelSelect.value;
+          var seen = {};
+          Array.prototype.forEach.call(els.modelSelect.options, function (o) { seen[o.value] = true; });
+          models.forEach(function (name) {
+            if (!seen[name]) {
+              var opt = document.createElement("option");
+              opt.value = name;
+              opt.textContent = name;
+              els.modelSelect.appendChild(opt);
+              seen[name] = true;
+            }
+          });
+          if (models.indexOf(current) !== -1) els.modelSelect.value = current;
+          showStatus("接続OK。generateContent 対応モデルを " + models.length + " 件取得し、選択肢に追加しました。", "ok");
+          saveSettings();
+          updateKeyState();
+        }).catch(function (err) {
+          if (err instanceof TypeError) {
+            showStatus("ネットワークに接続できませんでした。通信環境を確認してください。", "err");
+          } else {
+            showStatus(err.message, "err");
+          }
+        });
+      }
+
+      els.fetchModelsBtn.addEventListener("click", fetchModels);
+      els.testBtn.addEventListener("click", function () {
+        var key = getKey();
+        if (!key) {
+          showStatus("まずAPIキーを入力してください。", "err");
+          els.apiKey.focus();
+          return;
+        }
+        els.testBtn.disabled = true;
+        fetchModels().then(function () { els.testBtn.disabled = false; });
+      });
+
+      /* ---------- markdown (lightweight, escaped first) ---------- */
+      function escapeHtml(s) {
+        return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+      }
+      function renderInline(s) {
+        s = s.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+        s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+        s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+        return s;
+      }
+      function renderMarkdown(md) {
+        var lines = escapeHtml(md).split("\n");
+        var html = "";
+        var inCode = false, codeBuf = [];
+        var listType = null;
+        function closeList() {
+          if (listType) { html += listType === "ul" ? "</ul>" : "</ol>"; listType = null; }
+        }
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i];
+          if (/^```/.test(line)) {
+            if (inCode) {
+              html += "<pre><code>" + codeBuf.join("\n") + "</code></pre>";
+              codeBuf = []; inCode = false;
+            } else { closeList(); inCode = true; }
+            continue;
+          }
+          if (inCode) { codeBuf.push(line); continue; }
+          var m;
+          if ((m = line.match(/^#{1,4}\s+(.*)/))) {
+            closeList();
+            html += "<h4>" + renderInline(m[1]) + "</h4>";
+          } else if ((m = line.match(/^\s*[-*・]\s+(.*)/))) {
+            if (listType !== "ul") { closeList(); html += "<ul>"; listType = "ul"; }
+            html += "<li>" + renderInline(m[1]) + "</li>";
+          } else if ((m = line.match(/^\s*\d+[.)、]\s+(.*)/))) {
+            if (listType !== "ol") { closeList(); html += "<ol>"; listType = "ol"; }
+            html += "<li>" + renderInline(m[1]) + "</li>";
+          } else if ((m = line.match(/^&gt;\s?(.*)/))) {
+            closeList();
+            html += "<blockquote>" + renderInline(m[1]) + "</blockquote>";
+          } else if (line.trim() === "") {
+            closeList();
+          } else {
+            closeList();
+            html += "<p>" + renderInline(line) + "</p>";
+          }
+        }
+        if (inCode) html += "<pre><code>" + codeBuf.join("\n") + "</code></pre>";
+        closeList();
+        return html;
+      }
+
+      /* ---------- chat rendering ---------- */
+      function scrollToBottom() {
+        els.chatLog.scrollTop = els.chatLog.scrollHeight;
+      }
+      function addMessage(role, text) {
+        if (els.emptyState && els.emptyState.parentNode) els.emptyState.remove();
+        var wrap = document.createElement("div");
+        wrap.className = "msg " + role;
+        var bubble = document.createElement("div");
+        bubble.className = "bubble";
+        if (role === "model") bubble.innerHTML = renderMarkdown(text);
+        else bubble.textContent = text;
+        wrap.appendChild(bubble);
+        els.chatLog.appendChild(wrap);
+        scrollToBottom();
+        return { wrap: wrap, bubble: bubble };
+      }
+      function addErrorMessage(text) {
+        if (els.emptyState && els.emptyState.parentNode) els.emptyState.remove();
+        var wrap = document.createElement("div");
+        wrap.className = "msg error";
+        var bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.style.whiteSpace = "pre-wrap";
+        bubble.textContent = text;
+        wrap.appendChild(bubble);
+        els.chatLog.appendChild(wrap);
+        scrollToBottom();
+      }
+      function addMeta(bubble, modelName, usage) {
+        var meta = document.createElement("div");
+        meta.className = "meta";
+        var label = document.createElement("span");
+        var labelText = modelName;
+        if (usage && (usage.promptTokenCount != null || usage.candidatesTokenCount != null)) {
+          labelText += " ・ 入力 " + (usage.promptTokenCount || 0) + " / 出力 " + (usage.candidatesTokenCount || 0) + " トークン";
+        }
+        label.textContent = labelText;
+        meta.appendChild(label);
+        var copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.textContent = "コピー";
+        copyBtn.addEventListener("click", function () {
+          var text = bubble.getAttribute("data-raw") || "";
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () {
+              copyBtn.textContent = "コピーしました";
+              setTimeout(function () { copyBtn.textContent = "コピー"; }, 1600);
+            });
+          }
+        });
+        meta.appendChild(copyBtn);
+        bubble.appendChild(meta);
+      }
+
+      /* ---------- sending ---------- */
+      function setGenerating(on) {
+        generating = on;
+        els.sendBtn.textContent = on ? "停止" : "送信";
+        els.sendBtn.classList.toggle("stop", on);
+      }
+
+      function buildRequestBody() {
+        var contents = chatHistory.map(function (h) {
+          return { role: h.role, parts: [{ text: h.text }] };
+        });
+        var body = { contents: contents, generationConfig: {} };
+        var temp = parseFloat(els.temperature.value);
+        if (!isNaN(temp)) body.generationConfig.temperature = temp;
+        var maxT = parseInt(els.maxTokens.value, 10);
+        if (!isNaN(maxT) && maxT > 0) body.generationConfig.maxOutputTokens = maxT;
+        var sys = els.systemPrompt.value.trim();
+        if (sys) body.systemInstruction = { parts: [{ text: sys }] };
+        return body;
+      }
+
+      function extractText(json) {
+        var out = "";
+        try {
+          var parts = json.candidates[0].content.parts || [];
+          parts.forEach(function (p) { if (typeof p.text === "string") out += p.text; });
+        } catch (e) { /* no text */ }
+        return out;
+      }
+
+      function sendMessage() {
+        if (generating) { stopGeneration(); return; }
+        var text = els.input.value.trim();
+        if (!text) return;
+        var key = getKey();
+        if (!key) {
+          addErrorMessage("APIキーが設定されていません。設定パネルを開いて Gemini APIキーを入力してください。");
+          setSettingsOpen(true);
+          return;
+        }
+        hideStatus();
+        els.input.value = "";
+        autoResize();
+        chatHistory.push({ role: "user", text: text });
+        addMessage("user", text);
+
+        var model = getModel();
+        var body = buildRequestBody();
+        var refs = addMessage("model", "");
+        refs.bubble.innerHTML = '<span class="typing" aria-label="生成中"><span></span><span></span><span></span></span>';
+        setGenerating(true);
+        abortController = ("AbortController" in window) ? new AbortController() : null;
+
+        var fullText = "";
+        var usage = null;
+        var gotFirstChunk = false;
+
+        fetch(API_BASE + "/models/" + encodeURIComponent(model) + ":streamGenerateContent?alt=sse", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": key
+          },
+          body: JSON.stringify(body),
+          signal: abortController ? abortController.signal : undefined
+        }).then(function (res) {
+          if (!res.ok) return apiErrorFromResponse(res);
+          if (!res.body || !res.body.getReader) {
+            // Streaming unsupported: fall back to a plain request.
+            return fetch(API_BASE + "/models/" + encodeURIComponent(model) + ":generateContent", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+              body: JSON.stringify(body)
+            }).then(function (r2) {
+              if (!r2.ok) return apiErrorFromResponse(r2);
+              return r2.json();
+            }).then(function (json) {
+              fullText = extractText(json);
+              usage = json.usageMetadata || null;
+            });
+          }
+          var reader = res.body.getReader();
+          var decoder = new TextDecoder("utf-8");
+          var buffer = "";
+          function pump() {
+            return reader.read().then(function (result) {
+              if (result.done) return;
+              buffer += decoder.decode(result.value, { stream: true });
+              var lines = buffer.split("\n");
+              buffer = lines.pop();
+              lines.forEach(function (line) {
+                line = line.trim();
+                if (line.indexOf("data:") !== 0) return;
+                var payload = line.slice(5).trim();
+                if (!payload || payload === "[DONE]") return;
+                try {
+                  var json = JSON.parse(payload);
+                  var t = extractText(json);
+                  if (t) {
+                    fullText += t;
+                    gotFirstChunk = true;
+                    refs.bubble.innerHTML = renderMarkdown(fullText);
+                    scrollToBottom();
+                  }
+                  if (json.usageMetadata) usage = json.usageMetadata;
+                } catch (e) { /* partial JSON across chunks is buffered by line split */ }
+              });
+              return pump();
+            });
+          }
+          return pump();
+        }).then(function () {
+          if (!fullText) {
+            refs.wrap.remove();
+            addErrorMessage("モデルからテキストの応答が返りませんでした。安全フィルターでブロックされたか、モデルの応答形式が異なる可能性があります。入力を変えて再試行してください。");
+            return;
+          }
+          refs.bubble.innerHTML = renderMarkdown(fullText);
+          refs.bubble.setAttribute("data-raw", fullText);
+          addMeta(refs.bubble, model, usage);
+          chatHistory.push({ role: "model", text: fullText });
+          scrollToBottom();
+        }).catch(function (err) {
+          refs.wrap.remove();
+          if (err && err.name === "AbortError") {
+            if (fullText) {
+              var refs2 = addMessage("model", fullText);
+              refs2.bubble.setAttribute("data-raw", fullText);
+              chatHistory.push({ role: "model", text: fullText });
+              addMeta(refs2.bubble, model + "（生成を停止）", usage);
+            } else {
+              addErrorMessage("生成を停止しました。");
+            }
+            return;
+          }
+          if (err instanceof TypeError) {
+            addErrorMessage("ネットワークに接続できませんでした。通信環境を確認して、もう一度送信してください。");
+          } else {
+            addErrorMessage(err.message || "不明なエラーが発生しました。");
+          }
+        }).then(function () {
+          setGenerating(false);
+          abortController = null;
+          els.input.focus();
+        });
+      }
+
+      function stopGeneration() {
+        if (abortController) abortController.abort();
+      }
+
+      els.sendBtn.addEventListener("click", sendMessage);
+      els.input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      function autoResize() {
+        els.input.style.height = "auto";
+        els.input.style.height = Math.min(els.input.scrollHeight, 180) + "px";
+      }
+      els.input.addEventListener("input", autoResize);
+
+      els.newChatBtn.addEventListener("click", function () {
+        if (generating) stopGeneration();
+        chatHistory = [];
+        els.chatLog.innerHTML = "";
+        els.chatLog.appendChild(els.emptyState);
+        els.input.value = "";
+        autoResize();
+        els.input.focus();
+      });
+
+      /* ---------- settings wiring ---------- */
+      [els.modelSelect, els.customModel, els.systemPrompt, els.temperature, els.maxTokens].forEach(function (el) {
+        el.addEventListener("input", function () {
+          els.temperatureOut.textContent = parseFloat(els.temperature.value).toFixed(1);
+          saveSettings();
+          updateKeyState();
+        });
+        el.addEventListener("change", function () { saveSettings(); updateKeyState(); });
+      });
+
+      /* ---------- init ---------- */
+      (function init() {
+        var savedKey = loadKey();
+        if (savedKey) els.apiKey.value = savedKey;
+        var s = loadSettings();
+        if (s.model) {
+          var exists = Array.prototype.some.call(els.modelSelect.options, function (o) { return o.value === s.model; });
+          if (!exists) {
+            var opt = document.createElement("option");
+            opt.value = s.model; opt.textContent = s.model;
+            els.modelSelect.appendChild(opt);
+          }
+          els.modelSelect.value = s.model;
+        }
+        if (s.customModel) els.customModel.value = s.customModel;
+        if (s.systemPrompt) els.systemPrompt.value = s.systemPrompt;
+        if (typeof s.temperature === "number") {
+          els.temperature.value = s.temperature;
+          els.temperatureOut.textContent = s.temperature.toFixed(1);
+        }
+        if (s.maxTokens) els.maxTokens.value = s.maxTokens;
+        updateKeyState();
+        if (!savedKey) setSettingsOpen(true);
+        autoResize();
+      })();
+    </script>
+  </body>
+</html>
