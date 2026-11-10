@@ -211,6 +211,33 @@
       .status.err { background: var(--danger-bg); color: var(--danger); }
       .status.info { background: var(--warn-bg); color: var(--warn-ink); }
       .settings a { color: var(--accent); }
+      .toggle-row { display: flex; align-items: flex-start; gap: 10px; }
+      .toggle-row input[type="checkbox"] {
+        width: 22px; height: 22px;
+        accent-color: var(--accent);
+        flex: 0 0 auto;
+        margin-top: 2px;
+        cursor: pointer;
+      }
+      .toggle-row label { font-weight: 500; cursor: pointer; }
+      .btn.danger { color: var(--danger); border-color: var(--danger); }
+      .btn.danger:hover { background: var(--danger-bg); }
+      .btn.danger.armed { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+      /* ---------- Segment divider ---------- */
+      .divider {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 22px 4px;
+        color: var(--ink-faint);
+        font-size: 12.5px;
+      }
+      .divider::before, .divider::after {
+        content: "";
+        flex: 1 1 auto;
+        border-top: 1px solid var(--line);
+      }
 
       /* ---------- Chat log ---------- */
       .chat {
@@ -366,6 +393,45 @@
         color: var(--ink-faint);
         flex-wrap: wrap;
       }
+
+      /* ---------- Reply suggestions ---------- */
+      .suggestions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .suggestions[hidden] { display: none; }
+      .sugg-label {
+        font-size: 12px;
+        color: var(--ink-faint);
+        white-space: nowrap;
+      }
+      .sugg-btn {
+        border: 1px solid var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        border-radius: 999px;
+        padding: 6px 14px;
+        font-size: 13.5px;
+        font-weight: 500;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        text-align: left;
+      }
+      .sugg-btn:hover { background: var(--accent); color: var(--accent-ink); }
+      .sugg-loading { font-size: 12.5px; color: var(--ink-faint); }
+      .sugg-dismiss {
+        border: none;
+        background: none;
+        color: var(--ink-faint);
+        padding: 4px 8px;
+        min-height: 2rem;
+        font-size: 15px;
+        line-height: 1;
+      }
+      .sugg-dismiss:hover { color: var(--danger); }
     </style>
   </head>
   <body>
@@ -432,12 +498,44 @@
             <input type="number" id="maxTokens" min="64" max="65536" step="64" value="8192" />
           </div>
         </div>
+
+        <div class="field">
+          <span class="f-label" id="historyLabel">チャット履歴</span>
+          <div class="toggle-row">
+            <input type="checkbox" id="loadAllHistory" checked aria-describedby="historyHint" />
+            <label for="loadAllHistory">毎回、過去の全てのチャットを読み込ませる</label>
+          </div>
+          <p class="hint" id="historyHint">
+            オンにすると、過去のセッションや「新しいチャット」を押す前の会話も含め、保存済みの全履歴を毎回のリクエストに含めて送信します。
+            オフの場合は、今のチャット（最後に「新しいチャット」を押して以降、またはページを開いて以降）の会話だけを送ります。
+            会話はどちらの場合もこのブラウザの localStorage に保存され、ページを開くたびに表示が復元されます。
+          </p>
+          <p class="hint" id="historyStats">保存済み履歴: まだありません</p>
+          <p class="hint">
+            注意: 全履歴を毎回読み込むと、その分だけ毎回のトークン消費（クォータ）が増えます。履歴が長くなり続けると、やがてモデルのコンテキスト上限に達してエラーになることがあります。その場合は下のボタンで履歴を削除してください。
+          </p>
+          <div class="key-actions">
+            <button class="btn danger" id="deleteHistoryBtn" type="button">保存済みの全チャット履歴を削除</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="f-label" id="suggestLabel">返信案</span>
+          <div class="toggle-row">
+            <input type="checkbox" id="suggestReplies" checked aria-describedby="suggestHint" />
+            <label for="suggestReplies">返信案ボタンを表示</label>
+          </div>
+          <p class="hint" id="suggestHint">
+            オンにすると、モデルの返信が終わるたびに、次に送れる返信の候補を3つ、メッセージ入力欄の下にボタンで表示します。ボタンを押すと、その文がそのまま送信されます。
+            候補の生成にも Gemini API を1回使うため、その分トークン（クォータ）を消費します。候補はチャット履歴には保存されません。
+          </p>
+        </div>
       </section>
 
       <main class="chat" id="chatLog" aria-live="polite">
         <div class="empty" id="emptyState">
           <h1>自分のAPIキーで使う Gemini チャット</h1>
-          <p>Google AI Studio で発行した Gemini APIキーを設定すると、そのままチャットを始められます。会話の文脈はこのチャットの中で保持されます。</p>
+          <p>Google AI Studio で発行した Gemini APIキーを設定すると、そのままチャットを始められます。会話はこのブラウザに保存され、次に開いたときも過去の全チャットが読み込まれて続きから使えます（設定で変更できます）。</p>
           <ol>
             <li>上の「設定」を開く</li>
             <li>APIキーを貼り付けて「接続テスト」</li>
@@ -452,6 +550,7 @@
           <textarea id="input" rows="1" placeholder="メッセージを入力…" aria-label="メッセージ入力"></textarea>
           <button id="sendBtn" type="button">送信</button>
         </div>
+        <div class="suggestions" id="suggestions" hidden aria-label="返信案"></div>
         <div class="foot">
           <span>Enter で送信 / Shift + Enter で改行</span>
           <span id="modelEcho"></span>
@@ -464,6 +563,7 @@
       var API_BASE = "https://generativelanguage.googleapis.com/v1beta";
       var LS_KEY = "gemini-chat:api-key";
       var LS_SETTINGS = "gemini-chat:settings";
+      var LS_HISTORY = "gemini-chat:history";
 
       var els = {
         modelSelect: document.getElementById("modelSelect"),
@@ -482,6 +582,11 @@
         temperature: document.getElementById("temperature"),
         temperatureOut: document.getElementById("temperatureOut"),
         maxTokens: document.getElementById("maxTokens"),
+        loadAllHistory: document.getElementById("loadAllHistory"),
+        historyStats: document.getElementById("historyStats"),
+        deleteHistoryBtn: document.getElementById("deleteHistoryBtn"),
+        suggestReplies: document.getElementById("suggestReplies"),
+        suggestions: document.getElementById("suggestions"),
         chatLog: document.getElementById("chatLog"),
         emptyState: document.getElementById("emptyState"),
         emptySettingsBtn: document.getElementById("emptySettingsBtn"),
@@ -490,7 +595,10 @@
         modelEcho: document.getElementById("modelEcho")
       };
 
-      var chatHistory = []; // {role: "user"|"model", text: string}
+      // All saved entries, chronological: {role: "user"|"model", text, ts} or {role: "separator", ts}
+      var chatHistory = loadHistory();
+      // Index where the current segment (since last new-chat / page load) begins.
+      var segmentStart = chatHistory.length;
       var generating = false;
       var abortController = null;
 
@@ -517,9 +625,40 @@
             customModel: els.customModel.value.trim(),
             systemPrompt: els.systemPrompt.value,
             temperature: parseFloat(els.temperature.value),
-            maxTokens: parseInt(els.maxTokens.value, 10) || 8192
+            maxTokens: parseInt(els.maxTokens.value, 10) || 8192,
+            loadAllHistory: els.loadAllHistory.checked,
+            suggestReplies: els.suggestReplies.checked
           }));
         } catch (e) { /* ignore */ }
+      }
+      function loadHistory() {
+        try {
+          var raw = localStorage.getItem(LS_HISTORY);
+          var arr = raw ? JSON.parse(raw) : [];
+          if (!Array.isArray(arr)) return [];
+          return arr.filter(function (h) {
+            return h && (h.role === "separator" ||
+              ((h.role === "user" || h.role === "model") && typeof h.text === "string"));
+          });
+        } catch (e) { return []; }
+      }
+      function saveHistory() {
+        try {
+          localStorage.setItem(LS_HISTORY, JSON.stringify(chatHistory));
+        } catch (e) { /* storage full or unavailable: keep chatting in memory */ }
+        updateHistoryStats();
+      }
+      function updateHistoryStats() {
+        var count = 0, chars = 0;
+        chatHistory.forEach(function (h) {
+          if (h.role === "user" || h.role === "model") {
+            count++;
+            chars += (h.text || "").length;
+          }
+        });
+        els.historyStats.textContent = count
+          ? "保存済み履歴: メッセージ " + count + "件 ・ 約 " + chars.toLocaleString() + " 文字"
+          : "保存済み履歴: まだありません";
       }
 
       function getKey() { return els.apiKey.value.trim(); }
@@ -755,16 +894,7 @@
         els.chatLog.appendChild(wrap);
         scrollToBottom();
       }
-      function addMeta(bubble, modelName, usage) {
-        var meta = document.createElement("div");
-        meta.className = "meta";
-        var label = document.createElement("span");
-        var labelText = modelName;
-        if (usage && (usage.promptTokenCount != null || usage.candidatesTokenCount != null)) {
-          labelText += " ・ 入力 " + (usage.promptTokenCount || 0) + " / 出力 " + (usage.candidatesTokenCount || 0) + " トークン";
-        }
-        label.textContent = labelText;
-        meta.appendChild(label);
+      function makeCopyButton(bubble) {
         var copyBtn = document.createElement("button");
         copyBtn.type = "button";
         copyBtn.textContent = "コピー";
@@ -777,8 +907,35 @@
             });
           }
         });
-        meta.appendChild(copyBtn);
+        return copyBtn;
+      }
+      function addMeta(bubble, modelName, usage) {
+        var meta = document.createElement("div");
+        meta.className = "meta";
+        var label = document.createElement("span");
+        var labelText = modelName;
+        if (usage && (usage.promptTokenCount != null || usage.candidatesTokenCount != null)) {
+          labelText += " ・ 入力 " + (usage.promptTokenCount || 0) + " / 出力 " + (usage.candidatesTokenCount || 0) + " トークン";
+        }
+        label.textContent = labelText;
+        meta.appendChild(label);
+        meta.appendChild(makeCopyButton(bubble));
         bubble.appendChild(meta);
+      }
+      function addCopyMeta(bubble) {
+        var meta = document.createElement("div");
+        meta.className = "meta";
+        meta.appendChild(makeCopyButton(bubble));
+        bubble.appendChild(meta);
+      }
+      function addSeparator() {
+        if (els.emptyState && els.emptyState.parentNode) els.emptyState.remove();
+        var div = document.createElement("div");
+        div.className = "divider";
+        var span = document.createElement("span");
+        span.textContent = "新しいチャット";
+        div.appendChild(span);
+        els.chatLog.appendChild(div);
       }
 
       /* ---------- sending ---------- */
@@ -789,7 +946,10 @@
       }
 
       function buildRequestBody() {
-        var contents = chatHistory.map(function (h) {
+        var source = els.loadAllHistory.checked ? chatHistory : chatHistory.slice(segmentStart);
+        var contents = source.filter(function (h) {
+          return h.role === "user" || h.role === "model";
+        }).map(function (h) {
           return { role: h.role, parts: [{ text: h.text }] };
         });
         var body = { contents: contents, generationConfig: {} };
@@ -811,10 +971,115 @@
         return out;
       }
 
+      /* ---------- reply suggestions ---------- */
+      // Suggestions are generated by one extra lightweight request after each
+      // main model reply. They are never saved to chatHistory and never
+      // trigger further suggestions themselves.
+      var SUGGEST_INSTRUCTION =
+        "以上の会話の流れを踏まえて、この会話のユーザー（人間）が次に送りそうな返信メッセージの候補を、ちょうど3つ提案してください。\n" +
+        "3つは方向を変えてください: 1つ目は会話を続ける・肯定する返信、2つ目はもっと詳しく聞く返信、3つ目は別の角度からの質問や話題転換の返信。\n" +
+        "各候補は短く（目安30文字以内、日本語で自然な一文）、ボタンに表示できる長さにしてください。\n" +
+        "出力は候補の文面だけを1行に1つずつ、合計3行で返してください。番号・記号・引用符・説明や前置きは付けないでください。";
+      var suggestionSeq = 0;
+
+      function clearSuggestions() {
+        suggestionSeq++;
+        els.suggestions.hidden = true;
+        els.suggestions.innerHTML = "";
+      }
+      function showSuggestionLoading() {
+        els.suggestions.innerHTML = "";
+        var s = document.createElement("span");
+        s.className = "sugg-loading";
+        s.textContent = "返信案を作成中…";
+        els.suggestions.appendChild(s);
+        els.suggestions.hidden = false;
+      }
+      function parseSuggestions(text) {
+        var out = [];
+        String(text || "").split(/\r?\n/).forEach(function (line) {
+          var t = line.trim();
+          t = t.replace(/^[-*・•●]\s*/, "");
+          t = t.replace(/^\d+\s*[.、)）:：]\s*/, "");
+          t = t.replace(/^[「『"“']+/, "").replace(/[」』"”']+$/, "");
+          t = t.trim();
+          if (t && out.indexOf(t) === -1) out.push(t);
+        });
+        return out.slice(0, 3);
+      }
+      function renderSuggestions(list) {
+        els.suggestions.innerHTML = "";
+        var label = document.createElement("span");
+        label.className = "sugg-label";
+        label.textContent = "返信案:";
+        els.suggestions.appendChild(label);
+        list.forEach(function (text) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "sugg-btn";
+          b.textContent = text;
+          b.addEventListener("click", function () {
+            if (generating) return;
+            els.input.value = text;
+            sendMessage();
+          });
+          els.suggestions.appendChild(b);
+        });
+        var x = document.createElement("button");
+        x.type = "button";
+        x.className = "sugg-dismiss";
+        x.textContent = "×";
+        x.setAttribute("aria-label", "返信案を閉じる");
+        x.addEventListener("click", clearSuggestions);
+        els.suggestions.appendChild(x);
+        els.suggestions.hidden = false;
+      }
+      function generateSuggestions() {
+        if (!els.suggestReplies.checked) return;
+        var key = getKey();
+        if (!key) return;
+        var seq = ++suggestionSeq;
+        showSuggestionLoading();
+        // Same conversation context as the main request.
+        var source = els.loadAllHistory.checked ? chatHistory : chatHistory.slice(segmentStart);
+        var contents = source.filter(function (h) {
+          return h.role === "user" || h.role === "model";
+        }).map(function (h) {
+          return { role: h.role, parts: [{ text: h.text }] };
+        });
+        contents.push({ role: "user", parts: [{ text: SUGGEST_INSTRUCTION }] });
+        var body = { contents: contents, generationConfig: { maxOutputTokens: 512 } };
+        var temp = parseFloat(els.temperature.value);
+        if (!isNaN(temp)) body.generationConfig.temperature = temp;
+        fetch(API_BASE + "/models/" + encodeURIComponent(getModel()) + ":generateContent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: JSON.stringify(body)
+        }).then(function (res) {
+          if (!res.ok) throw new Error("suggestion request failed");
+          return res.json();
+        }).then(function (json) {
+          if (seq !== suggestionSeq || generating) return;
+          var list = parseSuggestions(extractText(json));
+          if (list.length) {
+            renderSuggestions(list);
+          } else {
+            els.suggestions.hidden = true;
+            els.suggestions.innerHTML = "";
+          }
+        }).catch(function () {
+          // Fail silently: just hide the area, no error in the chat.
+          if (seq !== suggestionSeq) return;
+          els.suggestions.hidden = true;
+          els.suggestions.innerHTML = "";
+        });
+      }
+
       function sendMessage() {
         if (generating) { stopGeneration(); return; }
         var text = els.input.value.trim();
         if (!text) return;
+        clearSuggestions();
         var key = getKey();
         if (!key) {
           addErrorMessage("APIキーが設定されていません。設定パネルを開いて Gemini APIキーを入力してください。");
@@ -824,7 +1089,8 @@
         hideStatus();
         els.input.value = "";
         autoResize();
-        chatHistory.push({ role: "user", text: text });
+        chatHistory.push({ role: "user", text: text, ts: Date.now() });
+        saveHistory();
         addMessage("user", text);
 
         var model = getModel();
@@ -901,16 +1167,20 @@
           refs.bubble.innerHTML = renderMarkdown(fullText);
           refs.bubble.setAttribute("data-raw", fullText);
           addMeta(refs.bubble, model, usage);
-          chatHistory.push({ role: "model", text: fullText });
+          chatHistory.push({ role: "model", text: fullText, ts: Date.now() });
+          saveHistory();
           scrollToBottom();
+          generateSuggestions();
         }).catch(function (err) {
           refs.wrap.remove();
           if (err && err.name === "AbortError") {
             if (fullText) {
               var refs2 = addMessage("model", fullText);
               refs2.bubble.setAttribute("data-raw", fullText);
-              chatHistory.push({ role: "model", text: fullText });
+              chatHistory.push({ role: "model", text: fullText, ts: Date.now() });
+              saveHistory();
               addMeta(refs2.bubble, model + "（生成を停止）", usage);
+              generateSuggestions();
             } else {
               addErrorMessage("生成を停止しました。");
             }
@@ -948,16 +1218,53 @@
 
       els.newChatBtn.addEventListener("click", function () {
         if (generating) stopGeneration();
-        chatHistory = [];
-        els.chatLog.innerHTML = "";
-        els.chatLog.appendChild(els.emptyState);
+        // Saved history is kept: a new chat only starts a new segment.
+        var last = chatHistory[chatHistory.length - 1];
+        if (last && last.role !== "separator") {
+          chatHistory.push({ role: "separator", ts: Date.now() });
+          saveHistory();
+          addSeparator();
+        }
+        segmentStart = chatHistory.length;
+        clearSuggestions();
         els.input.value = "";
         autoResize();
+        scrollToBottom();
         els.input.focus();
       });
 
+      /* ---------- delete all saved history (two-step confirm) ---------- */
+      var deleteArmed = false;
+      var deleteTimer = null;
+      function disarmDelete() {
+        deleteArmed = false;
+        if (deleteTimer) { clearTimeout(deleteTimer); deleteTimer = null; }
+        els.deleteHistoryBtn.textContent = "保存済みの全チャット履歴を削除";
+        els.deleteHistoryBtn.classList.remove("armed");
+      }
+      els.deleteHistoryBtn.addEventListener("click", function () {
+        if (!deleteArmed) {
+          deleteArmed = true;
+          els.deleteHistoryBtn.textContent = "本当に全て削除しますか？（もう一度押すと削除）";
+          els.deleteHistoryBtn.classList.add("armed");
+          deleteTimer = setTimeout(disarmDelete, 5000);
+          return;
+        }
+        disarmDelete();
+        chatHistory = [];
+        segmentStart = 0;
+        clearSuggestions();
+        saveHistory();
+        els.chatLog.innerHTML = "";
+        els.chatLog.appendChild(els.emptyState);
+        showStatus("保存済みのチャット履歴を全て削除しました。", "info");
+      });
+
       /* ---------- settings wiring ---------- */
-      [els.modelSelect, els.customModel, els.systemPrompt, els.temperature, els.maxTokens].forEach(function (el) {
+      els.suggestReplies.addEventListener("change", function () {
+        if (!els.suggestReplies.checked) clearSuggestions();
+      });
+      [els.modelSelect, els.customModel, els.systemPrompt, els.temperature, els.maxTokens, els.loadAllHistory, els.suggestReplies].forEach(function (el) {
         el.addEventListener("input", function () {
           els.temperatureOut.textContent = parseFloat(els.temperature.value).toFixed(1);
           saveSettings();
@@ -987,6 +1294,22 @@
           els.temperatureOut.textContent = s.temperature.toFixed(1);
         }
         if (s.maxTokens) els.maxTokens.value = s.maxTokens;
+        if (typeof s.loadAllHistory === "boolean") els.loadAllHistory.checked = s.loadAllHistory;
+        if (typeof s.suggestReplies === "boolean") els.suggestReplies.checked = s.suggestReplies;
+        // Restore all saved past messages in chronological order.
+        chatHistory.forEach(function (h) {
+          if (h.role === "separator") {
+            addSeparator();
+          } else {
+            var refs = addMessage(h.role, h.text);
+            if (h.role === "model") {
+              refs.bubble.setAttribute("data-raw", h.text);
+              addCopyMeta(refs.bubble);
+            }
+          }
+        });
+        scrollToBottom();
+        updateHistoryStats();
         updateKeyState();
         if (!savedKey) setSettingsOpen(true);
         autoResize();
