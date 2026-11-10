@@ -432,6 +432,15 @@
         line-height: 1;
       }
       .sugg-dismiss:hover { color: var(--danger); }
+      .ready-dot {
+        display: inline-block;
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+        margin-left: 7px;
+        vertical-align: middle;
+      }
+      .toggle-sub { margin-top: 14px; }
     </style>
   </head>
   <body>
@@ -529,6 +538,14 @@
             オンにすると、モデルの返信が終わるたびに、次に送れる返信の候補を3つ、メッセージ入力欄の下にボタンで表示します。ボタンを押すと、その文がそのまま送信されます。
             候補の生成にも Gemini API を1回使うため、その分トークン（クォータ）を消費します。候補はチャット履歴には保存されません。
           </p>
+          <div class="toggle-row toggle-sub">
+            <input type="checkbox" id="prefetchReplies" checked aria-describedby="prefetchHint" />
+            <label for="prefetchReplies">返信案の回答を事前生成する</label>
+          </div>
+          <p class="hint" id="prefetchHint">
+            オンにすると（「返信案ボタンを表示」がオンのときのみ有効）、返信案3つそれぞれに対するモデルの回答を、返信を読んでいる間に裏側で先に生成しておきます。回答が生成済みの返信案（ボタンに ● が付いたもの）を選ぶと、待ち時間なしでその回答が表示されます。
+            その代わり、1回の返信ごとに約3回分余分に生成リクエストを使うため、APIの利用上限（クォータ、429エラー）に早く達することがあります。事前生成に失敗した返信案は、選んだときに通常通りその場で生成されます。事前生成した回答は、選んだ1つだけが履歴に保存され、残りは破棄されます。
+          </p>
         </div>
       </section>
 
@@ -586,6 +603,7 @@
         historyStats: document.getElementById("historyStats"),
         deleteHistoryBtn: document.getElementById("deleteHistoryBtn"),
         suggestReplies: document.getElementById("suggestReplies"),
+        prefetchReplies: document.getElementById("prefetchReplies"),
         suggestions: document.getElementById("suggestions"),
         chatLog: document.getElementById("chatLog"),
         emptyState: document.getElementById("emptyState"),
@@ -627,7 +645,8 @@
             temperature: parseFloat(els.temperature.value),
             maxTokens: parseInt(els.maxTokens.value, 10) || 8192,
             loadAllHistory: els.loadAllHistory.checked,
-            suggestReplies: els.suggestReplies.checked
+            suggestReplies: els.suggestReplies.checked,
+            prefetchReplies: els.prefetchReplies.checked
           }));
         } catch (e) { /* ignore */ }
       }
@@ -945,13 +964,15 @@
         els.sendBtn.classList.toggle("stop", on);
       }
 
-      function buildRequestBody() {
+      function currentContents() {
         var source = els.loadAllHistory.checked ? chatHistory : chatHistory.slice(segmentStart);
-        var contents = source.filter(function (h) {
+        return source.filter(function (h) {
           return h.role === "user" || h.role === "model";
         }).map(function (h) {
           return { role: h.role, parts: [{ text: h.text }] };
         });
+      }
+      function buildBody(contents) {
         var body = { contents: contents, generationConfig: {} };
         var temp = parseFloat(els.temperature.value);
         if (!isNaN(temp)) body.generationConfig.temperature = temp;
@@ -960,6 +981,9 @@
         var sys = els.systemPrompt.value.trim();
         if (sys) body.systemInstruction = { parts: [{ text: sys }] };
         return body;
+      }
+      function buildRequestBody() {
+        return buildBody(currentContents());
       }
 
       function extractText(json) {
@@ -981,9 +1005,30 @@
         "各候補は短く（目安30文字以内、日本語で自然な一文）、ボタンに表示できる長さにしてください。\n" +
         "出力は候補の文面だけを1行に1つずつ、合計3行で返してください。番号・記号・引用符・説明や前置きは付けないでください。";
       var suggestionSeq = 0;
+      // Pre-generated answers behind the suggestions. Memory only: never
+      // written to localStorage or chatHistory. Exactly one level deep —
+      // a prefetch result never starts suggestions or further prefetches;
+      // only a main-flow model reply starts a new cycle.
+      var prefetchSeq = 0;
+      var prefetchBranches = [];
+      var currentSuggestions = [];
+      var applySeq = 0;
 
+      function invalidatePrefetches() {
+        prefetchSeq++;
+        prefetchBranches.forEach(function (br) {
+          if (br.btn) {
+            br.btn.classList.remove("ready");
+            br.btn.removeAttribute("title");
+          }
+        });
+        prefetchBranches = [];
+      }
       function clearSuggestions() {
         suggestionSeq++;
+        applySeq++;
+        invalidatePrefetches();
+        currentSuggestions = [];
         els.suggestions.hidden = true;
         els.suggestions.innerHTML = "";
       }
@@ -1009,21 +1054,20 @@
       }
       function renderSuggestions(list) {
         els.suggestions.innerHTML = "";
+        currentSuggestions = list.slice();
         var label = document.createElement("span");
         label.className = "sugg-label";
         label.textContent = "返信案:";
         els.suggestions.appendChild(label);
-        list.forEach(function (text) {
+        var btns = [];
+        list.forEach(function (text, idx) {
           var b = document.createElement("button");
           b.type = "button";
           b.className = "sugg-btn";
           b.textContent = text;
-          b.addEventListener("click", function () {
-            if (generating) return;
-            els.input.value = text;
-            sendMessage();
-          });
+          b.addEventListener("click", function () { onSuggestionClick(idx); });
           els.suggestions.appendChild(b);
+          btns.push(b);
         });
         var x = document.createElement("button");
         x.type = "button";
@@ -1033,6 +1077,7 @@
         x.addEventListener("click", clearSuggestions);
         els.suggestions.appendChild(x);
         els.suggestions.hidden = false;
+        return btns;
       }
       function generateSuggestions() {
         if (!els.suggestReplies.checked) return;
@@ -1062,7 +1107,8 @@
           if (seq !== suggestionSeq || generating) return;
           var list = parseSuggestions(extractText(json));
           if (list.length) {
-            renderSuggestions(list);
+            var btns = renderSuggestions(list);
+            startPrefetches(list, btns);
           } else {
             els.suggestions.hidden = true;
             els.suggestions.innerHTML = "";
@@ -1072,6 +1118,141 @@
           if (seq !== suggestionSeq) return;
           els.suggestions.hidden = true;
           els.suggestions.innerHTML = "";
+        });
+      }
+
+      /* ---------- pre-generated answers (prefetch) ---------- */
+      // As soon as the 3 suggestions are shown, fire one non-streaming
+      // generateContent request per candidate in the background, using the
+      // same context snapshot and settings a normal send would use right
+      // now, with the candidate appended as the final user message.
+      function startPrefetches(list, btns) {
+        if (!els.suggestReplies.checked || !els.prefetchReplies.checked) return;
+        var key = getKey();
+        if (!key) return;
+        var seq = ++prefetchSeq;
+        var model = getModel();
+        var base = currentContents();
+        prefetchBranches = list.map(function (text, i) {
+          return {
+            text: text,
+            status: "pending", // "pending" | "ready" | "error"
+            answer: "",
+            usage: null,
+            model: model,
+            btn: btns[i] || null,
+            promise: null
+          };
+        });
+        prefetchBranches.forEach(function (br) {
+          var contents = base.concat([{ role: "user", parts: [{ text: br.text }] }]);
+          var body = buildBody(contents);
+          // The promise never rejects: the outcome lands on br.status.
+          br.promise = fetch(API_BASE + "/models/" + encodeURIComponent(model) + ":generateContent", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+            body: JSON.stringify(body)
+          }).then(function (res) {
+            if (!res.ok) throw new Error("prefetch failed");
+            return res.json();
+          }).then(function (json) {
+            var text = extractText(json);
+            if (!text) throw new Error("prefetch empty");
+            br.answer = text;
+            br.usage = json.usageMetadata || null;
+            br.status = "ready";
+            if (seq === prefetchSeq && br.btn) {
+              br.btn.classList.add("ready");
+              var dot = document.createElement("span");
+              dot.className = "ready-dot";
+              dot.setAttribute("aria-hidden", "true");
+              br.btn.appendChild(dot);
+              br.btn.title = "回答を生成済みです。押すとすぐに表示されます";
+            }
+            return br;
+          }).catch(function () {
+            // Silent per-branch failure: tapping falls back to a live send.
+            br.status = "error";
+            return br;
+          });
+        });
+      }
+
+      function onSuggestionClick(idx) {
+        if (generating) return;
+        var br = prefetchBranches[idx];
+        if (br && br.status === "ready") { applyReadyBranch(br); return; }
+        if (br && br.status === "pending" && br.promise) { applyPendingBranch(br); return; }
+        // No branch (prefetch off / invalidated) or an errored branch:
+        // fall back to the normal live send flow.
+        var text = currentSuggestions[idx];
+        if (!text) return;
+        els.input.value = text;
+        sendMessage();
+      }
+
+      // Ready branch: show the cached answer instantly, no API wait.
+      // Only the chosen pair is saved to history; the other branches are
+      // discarded, then the next suggestion + prefetch cycle starts.
+      function applyReadyBranch(br) {
+        var cand = br.text, ans = br.answer, usage = br.usage, model = br.model;
+        clearSuggestions();
+        hideStatus();
+        chatHistory.push({ role: "user", text: cand, ts: Date.now() });
+        addMessage("user", cand);
+        var refs = addMessage("model", ans);
+        refs.bubble.setAttribute("data-raw", ans);
+        addMeta(refs.bubble, model, usage);
+        chatHistory.push({ role: "model", text: ans, ts: Date.now() });
+        saveHistory();
+        scrollToBottom();
+        generateSuggestions();
+        els.input.focus();
+      }
+
+      // Pending branch: reuse the in-flight prefetch (never a duplicate
+      // request). Post the user message with the waiting placeholder, then
+      // swap in the prefetch result when it lands.
+      function applyPendingBranch(br) {
+        var cand = br.text, model = br.model, promise = br.promise;
+        clearSuggestions();
+        var myApply = applySeq;
+        hideStatus();
+        chatHistory.push({ role: "user", text: cand, ts: Date.now() });
+        saveHistory();
+        var userRefs = addMessage("user", cand);
+        var refs = addMessage("model", "");
+        refs.bubble.innerHTML = '<span class="typing" aria-label="生成中"><span></span><span></span><span></span></span>';
+        setGenerating(true);
+        promise.then(function () {
+          if (myApply !== applySeq) {
+            // The user moved on (new chat, own message, …): drop the
+            // placeholder and leave the newer flow in charge.
+            refs.wrap.remove();
+            if (generating) setGenerating(false);
+            return;
+          }
+          if (br.status === "ready" && br.answer) {
+            refs.bubble.innerHTML = renderMarkdown(br.answer);
+            refs.bubble.setAttribute("data-raw", br.answer);
+            addMeta(refs.bubble, model, br.usage);
+            chatHistory.push({ role: "model", text: br.answer, ts: Date.now() });
+            saveHistory();
+            scrollToBottom();
+            setGenerating(false);
+            generateSuggestions();
+            els.input.focus();
+          } else {
+            // The prefetch failed after all: undo the optimistic post and
+            // run the normal live send for this candidate.
+            refs.wrap.remove();
+            userRefs.wrap.remove();
+            chatHistory.pop();
+            saveHistory();
+            setGenerating(false);
+            els.input.value = cand;
+            sendMessage();
+          }
         });
       }
 
@@ -1262,9 +1443,20 @@
 
       /* ---------- settings wiring ---------- */
       els.suggestReplies.addEventListener("change", function () {
+        invalidatePrefetches();
         if (!els.suggestReplies.checked) clearSuggestions();
       });
-      [els.modelSelect, els.customModel, els.systemPrompt, els.temperature, els.maxTokens, els.loadAllHistory, els.suggestReplies].forEach(function (el) {
+      els.prefetchReplies.addEventListener("change", function () {
+        if (!els.prefetchReplies.checked) invalidatePrefetches();
+      });
+      // Prefetch snapshots stop matching reality when these change.
+      [els.modelSelect, els.customModel].forEach(function (el) {
+        el.addEventListener("input", invalidatePrefetches);
+        el.addEventListener("change", invalidatePrefetches);
+      });
+      els.systemPrompt.addEventListener("input", invalidatePrefetches);
+      els.loadAllHistory.addEventListener("change", invalidatePrefetches);
+      [els.modelSelect, els.customModel, els.systemPrompt, els.temperature, els.maxTokens, els.loadAllHistory, els.suggestReplies, els.prefetchReplies].forEach(function (el) {
         el.addEventListener("input", function () {
           els.temperatureOut.textContent = parseFloat(els.temperature.value).toFixed(1);
           saveSettings();
@@ -1296,6 +1488,7 @@
         if (s.maxTokens) els.maxTokens.value = s.maxTokens;
         if (typeof s.loadAllHistory === "boolean") els.loadAllHistory.checked = s.loadAllHistory;
         if (typeof s.suggestReplies === "boolean") els.suggestReplies.checked = s.suggestReplies;
+        if (typeof s.prefetchReplies === "boolean") els.prefetchReplies.checked = s.prefetchReplies;
         // Restore all saved past messages in chronological order.
         chatHistory.forEach(function (h) {
           if (h.role === "separator") {
